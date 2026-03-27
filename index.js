@@ -2,10 +2,14 @@ require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const SECRET = process.env.JWT_SECRET || "segredo_super_secreto";
 
 // 🔥 CONEXÃO POSTGRES
 const db = new Pool({
@@ -15,10 +19,70 @@ const db = new Pool({
   }
 });
 
-// ================= ROTAS =================
+
+// ================= MIDDLEWARE AUTH =================
+
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+
+  if (!auth) {
+    return res.status(401).json({ erro: "Token não enviado" });
+  }
+
+  const token = auth.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ erro: "Token inválido" });
+  }
+}
+
+
+// ================= LOGIN =================
+
+app.post("/auth/login", async (req, res) => {
+  const { email, senha } = req.body;
+
+  try {
+    const result = await db.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ erro: "Usuário não encontrado" });
+    }
+
+    const user = result.rows[0];
+
+    const senhaValida = await bcrypt.compare(senha, user.senha);
+
+    if (!senhaValida) {
+      return res.status(401).json({ erro: "Senha inválida" });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.json({ token });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro no login" });
+  }
+});
+
+
+// ================= ROTAS PROTEGIDAS =================
 
 // LISTAR TODOS
-app.get("/clientes", async (req, res) => {
+app.get("/clientes", authMiddleware, async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM clientes ORDER BY id DESC");
     res.json(result.rows);
@@ -29,7 +93,7 @@ app.get("/clientes", async (req, res) => {
 });
 
 // BUSCAR POR ID
-app.get("/clientes/:id", async (req, res) => {
+app.get("/clientes/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -50,7 +114,7 @@ app.get("/clientes/:id", async (req, res) => {
 });
 
 // CRIAR
-app.post("/clientes", async (req, res) => {
+app.post("/clientes", authMiddleware, async (req, res) => {
   const { nome, email } = req.body;
 
   try {
@@ -67,7 +131,7 @@ app.post("/clientes", async (req, res) => {
 });
 
 // ATUALIZAR
-app.put("/clientes/:id", async (req, res) => {
+app.put("/clientes/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { nome, email } = req.body;
 
@@ -85,7 +149,7 @@ app.put("/clientes/:id", async (req, res) => {
 });
 
 // DELETAR
-app.delete("/clientes/:id", async (req, res) => {
+app.delete("/clientes/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -96,6 +160,7 @@ app.delete("/clientes/:id", async (req, res) => {
     res.status(500).json({ erro: "Erro ao deletar" });
   }
 });
+
 
 // ================= SERVIDOR =================
 
