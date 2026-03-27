@@ -1,108 +1,104 @@
-require('dotenv').config()
+require('dotenv').config();
 const express = require("express");
-const mysql = require("mysql2");
 const cors = require("cors");
+const { Pool } = require("pg");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// BANCO
-const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME
-});
-
-// CONEXÃO
-db.connect(err => {
-    if (err) {
-        console.error("Erro ao conectar no MySQL:", err);
-        return;
-    }
-    console.log("Conectado ao MySQL");
+// 🔥 CONEXÃO POSTGRES
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // ================= ROTAS =================
 
-// TESTE
-app.get("/", (req, res) => {
-    res.send("API Indoubt funcionando");
-});
-
 // LISTAR TODOS
-app.get("/clientes", (req, res) => {
-    db.query("SELECT * FROM clientes ORDER BY id DESC", (err, results) => {
-        if (err) return res.status(500).json(err);
-        res.json(results);
-    });
+app.get("/clientes", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM clientes ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro ao buscar clientes" });
+  }
 });
 
-// BUSCAR POR ID 🔥
-app.get("/clientes/:id", (req, res) => {
-    const { id } = req.params;
+// BUSCAR POR ID
+app.get("/clientes/:id", async (req, res) => {
+  const { id } = req.params;
 
-    db.query("SELECT * FROM clientes WHERE id = ?", [id], (err, result) => {
-        if (err) return res.status(500).json(err);
+  try {
+    const result = await db.query(
+      "SELECT * FROM clientes WHERE id = $1",
+      [id]
+    );
 
-        if (result.length === 0) {
-            return res.status(404).json({ error: "Cliente não encontrado" });
-        }
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Cliente não encontrado" });
+    }
 
-        res.json(result[0]);
-    });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro ao buscar cliente" });
+  }
 });
 
 // CRIAR
-app.post("/clientes", (req, res) => {
-    const { nome, telefone } = req.body;
+app.post("/clientes", async (req, res) => {
+  const { nome, email } = req.body;
 
-    if (!nome || !telefone) {
-        return res.status(400).json({ error: "Nome e telefone obrigatórios" });
-    }
+  try {
+    await db.query(
+      "INSERT INTO clientes (nome, email) VALUES ($1, $2)",
+      [nome, email]
+    );
 
-    const sql = "INSERT INTO clientes (nome, telefone) VALUES (?, ?)";
-
-    db.query(sql, [nome, telefone], (err, result) => {
-        if (err) return res.status(500).json(err);
-
-        res.json({
-            id: result.insertId,
-            nome,
-            telefone
-        });
-    });
+    res.json({ mensagem: "Cliente criado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro ao inserir cliente" });
+  }
 });
 
-app.put("/clientes/:id", (req, res) => {
-    const { id } = req.params;
-    const { nome, telefone } = req.body;
+// ATUALIZAR
+app.put("/clientes/:id", async (req, res) => {
+  const { id } = req.params;
+  const { nome, email } = req.body;
 
-    const sql = "UPDATE clientes SET nome = ?, telefone = ? WHERE id = ?";
+  try {
+    await db.query(
+      "UPDATE clientes SET nome = $1, email = $2 WHERE id = $3",
+      [nome, email, id]
+    );
 
-    db.query(sql, [nome, telefone, id], (err) => {
-        if (err) return res.status(500).json(err);
-
-        res.json({ message: "Cliente atualizado com sucesso" });
-    });
+    res.json({ mensagem: "Cliente atualizado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro ao atualizar" });
+  }
 });
 
-app.delete("/clientes/:id", (req, res) => {
-    const { id } = req.params;
+// DELETAR
+app.delete("/clientes/:id", async (req, res) => {
+  const { id } = req.params;
 
-    db.query("DELETE FROM clientes WHERE id = ?", [id], (err, result) => {
-        if (err) return res.status(500).json(err);
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: "Cliente não encontrado" });
-        }
-
-        res.json({ message: "Cliente deletado com sucesso" });
-    });
+  try {
+    await db.query("DELETE FROM clientes WHERE id = $1", [id]);
+    res.json({ mensagem: "Cliente deletado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Erro ao deletar" });
+  }
 });
+
 // ================= SERVIDOR =================
 
 app.listen(3000, '0.0.0.0', () => {
-  console.log("Servidor rodando");
+  console.log("Servidor rodando 🚀");
 });
