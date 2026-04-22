@@ -60,11 +60,11 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ erro: "Senha inválida" });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
+   const token = jwt.sign(
+  { id: user.id, email: user.email, role: user.role },
+  SECRET,
+  { expiresIn: "1d" }
+);
 
     res.json({
       token,
