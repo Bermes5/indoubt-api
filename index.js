@@ -44,7 +44,7 @@ function authMiddleware(req, res, next) {
 // ================= LOGIN =================
 
 app.post("/auth/login", async (req, res) => {
-  const { email, senha } = req.body;
+  const { email, password } = req.body;
 
   try {
     const result = await db.query(
@@ -58,23 +58,25 @@ app.post("/auth/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    const senhaValida = await bcrypt.compare(senha, user.senha);
-
-    if (!senhaValida) {
+    // 🔴 TROCA TEMPORÁRIA (IMPORTANTE)
+    if (user.senha !== password) {
       return res.status(401).json({ erro: "Senha inválida" });
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, role: user.role },
       SECRET,
       { expiresIn: "1d" }
     );
 
-    res.json({ token });
+    res.json({
+      token,
+      role: user.role
+    });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ erro: "Erro no login" });
+    console.error("ERRO REAL LOGIN:", err); // 🔥 importante
+    res.status(500).json({ erro: err.message });
   }
 });
 
@@ -160,8 +162,6 @@ app.delete("/clientes/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ erro: "Erro ao deletar" });
   }
 });
-
-
 // ================= SERVIDOR =================
 
 app.listen(3000, '0.0.0.0', () => {
