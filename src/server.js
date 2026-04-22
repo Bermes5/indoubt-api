@@ -1,150 +1,99 @@
- require('dotenv').config();
-
+require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
-
-// 🔥 IMPORTA A CONEXÃO CENTRAL
-const db = require("./config/db");
+const { Pool } = require("pg");
+const jwt = require("jsonwebtoken");
 
 const app = express();
-
-// ================= MIDDLEWARES =================
 app.use(cors());
 app.use(express.json());
 
-// ================= TESTE =================
-app.get("/", (req, res) => {
-    res.send("API Indoubt funcionando");
+const SECRET = process.env.JWT_SECRET || "segredo_super_secreto";
+
+// 🔥 CONEXÃO POSTGRES
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
+
+// ================= MIDDLEWARE AUTH =================
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+
+  if (!auth) {
+    return res.status(401).json({ erro: "Token não enviado" });
+  }
+
+  const token = auth.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ erro: "Token inválido" });
+  }
+}
 
 // ================= LOGIN =================
-app.post("/auth/login", (req, res) => {
-    const { email, senha } = req.body;
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-    if (!email || !senha) {
-        return res.status(400).json({
-            error: "Email e senha obrigatórios"
-        });
+    console.log("BODY:", req.body);
+
+    const result = await db.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ erro: "Usuário não encontrado" });
     }
 
-    const sql = "SELECT * FROM usuarios WHERE email = ?";
+    const user = result.rows[0];
 
-    db.query(sql, [email], (err, result) => {
-        if (err) {
-            console.error("Erro no login:", err);
-            return res.status(500).json({ error: "Erro interno" });
-        }
+    console.log("USER:", user);
 
-        if (result.length === 0) {
-            return res.status(401).json({ error: "Usuário não encontrado" });
-        }
-
-        const user = result[0];
-
-        if (user.senha !== senha) {
-            return res.status(401).json({ error: "Senha inválida" });
-        }
-
-        // 🔥 TOKEN SIMPLES (placeholder)
-        const token = "token_fake_" + user.id;
-
-        res.json({
-            token,
-            user: {
-                id: user.id,
-                email: user.email
-            }
-        });
-    });
-});
-
-// ================= CLIENTES =================
-
-// LISTAR
-app.get("/clientes", (req, res) => {
-    db.query("SELECT * FROM clientes ORDER BY id DESC", (err, results) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Erro ao buscar clientes" });
-        }
-
-        res.json(results);
-    });
-});
-
-// BUSCAR POR ID
-app.get("/clientes/:id", (req, res) => {
-    const { id } = req.params;
-
-    db.query("SELECT * FROM clientes WHERE id = ?", [id], (err, result) => {
-        if (err) return res.status(500).json(err);
-
-        if (result.length === 0) {
-            return res.status(404).json({ error: "Cliente não encontrado" });
-        }
-
-        res.json(result[0]);
-    });
-});
-
-// CRIAR
-app.post("/clientes", (req, res) => {
-    const { nome, telefone } = req.body;
-
-    if (!nome || !telefone) {
-        return res.status(400).json({
-            error: "Nome e telefone obrigatórios"
-        });
+    // 🔥 CORREÇÃO AQUI
+    if (String(user.senha) !== String(password)) {
+      return res.status(401).json({ erro: "Senha inválida" });
     }
 
-    const sql = "INSERT INTO clientes (nome, telefone) VALUES (?, ?)";
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
-    db.query(sql, [nome, telefone], (err, result) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Erro ao criar cliente" });
-        }
-
-        res.json({
-            id: result.insertId,
-            nome,
-            telefone
-        });
+    res.json({
+      token,
+      role: user.role
     });
+
+  } catch (err) {
+    console.error("ERRO REAL LOGIN:", err);
+    res.status(500).json({ erro: err.message });
+  }
 });
 
-// ATUALIZAR
-app.put("/clientes/:id", (req, res) => {
-    const { id } = req.params;
-    const { nome, telefone } = req.body;
-
-    const sql = "UPDATE clientes SET nome = ?, telefone = ? WHERE id = ?";
-
-    db.query(sql, [nome, telefone, id], (err) => {
-        if (err) return res.status(500).json(err);
-
-        res.json({ message: "Cliente atualizado com sucesso" });
-    });
+// ================= ROTAS PROTEGIDAS =================
+app.get("/clientes", authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM clientes ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ erro: "Erro ao buscar clientes" });
+  }
 });
 
-// DELETAR
-app.delete("/clientes/:id", (req, res) => {
-    const { id } = req.params;
-
-    db.query("DELETE FROM clientes WHERE id = ?", [id], (err, result) => {
-        if (err) return res.status(500).json(err);
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: "Cliente não encontrado" });
-        }
-
-        res.json({ message: "Cliente deletado com sucesso" });
-    });
+// ================= TESTE =================
+app.get("/", (req, res) => {
+  res.send("API rodando 🚀");
 });
 
-// ================= SERVIDOR =================
+// ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log("Servidor rodando");
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });

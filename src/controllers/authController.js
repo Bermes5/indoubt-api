@@ -1,35 +1,44 @@
-const pool = require("../config/db");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const { secret, expiresIn } = require("../config/jwt");
+const bcrypt = require("bcrypt")
+const jwt = require("jsonwebtoken")
+const db = require("../config/db") // ajuste conforme seu projeto
 
 exports.login = async (req, res) => {
-    const { email, senha } = req.body;
+  try {
+    const { email, password } = req.body
 
-    const [rows] = await pool.query(
-        "SELECT * FROM usuarios WHERE email = ? AND ativo = 1",
-        [email]
-    );
+    console.log("LOGIN REQUEST:", email)
 
-    if (rows.length === 0) {
-        return res.status(401).json({ error: "Usuário não encontrado" });
+    const [rows] = await db.query(
+      "SELECT * FROM users WHERE email = ?",
+      [email]
+    )
+
+    const user = rows[0]
+
+    // 🔴 CORREÇÃO CRÍTICA
+    if (!user) {
+      return res.status(401).json({ erro: "Usuário não encontrado" })
     }
 
-    const usuario = rows[0];
+    const senhaValida = await bcrypt.compare(password, user.password)
 
-    const senhaOk = await bcrypt.compare(senha, usuario.senha_hash);
-    if (!senhaOk) {
-        return res.status(401).json({ error: "Senha inválida" });
+    if (!senhaValida) {
+      return res.status(401).json({ erro: "Senha inválida" })
     }
 
-    const token = jwt.sign({ id: usuario.id }, secret, { expiresIn });
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET || "segredo",
+      { expiresIn: "1d" }
+    )
 
-    res.json({
-        token,
-        usuario: {
-            id: usuario.id,
-            nome: usuario.nome,
-            email: usuario.email
-        }
-    });
-};
+    return res.json({
+      token,
+      role: user.role
+    })
+
+  } catch (err) {
+    console.error("ERRO LOGIN:", err)
+    return res.status(500).json({ erro: err.message })
+  }
+}
