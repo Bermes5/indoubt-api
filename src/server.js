@@ -87,18 +87,28 @@ app.get("/clientes", authMiddleware, async (req, res) => {
   }
 });
 
-// 🔥 CRIAR (ESSA ERA A FALTANTE)
+// 🔥 CRIAR
 app.post("/clientes", authMiddleware, async (req, res) => {
   try {
-    const { nome, email } = req.body;
+    const {
+      nome,
+      email,
+      telefone,
+      endereco,
+      nomeSocial,
+      documento
+    } = req.body;
 
     if (!nome || !email) {
       return res.status(400).json({ erro: "Nome e email são obrigatórios" });
     }
 
     const result = await db.query(
-      "INSERT INTO clientes (nome, email) VALUES ($1, $2) RETURNING *",
-      [nome, email]
+      `INSERT INTO clientes 
+      (nome, email, telefone, endereco, nome_social, documento) 
+      VALUES ($1, $2, $3, $4, $5, $6) 
+      RETURNING *`,
+      [nome, email, telefone, endereco, nomeSocial, documento]
     );
 
     console.log("CLIENTE CRIADO:", result.rows[0]);
@@ -111,20 +121,38 @@ app.post("/clientes", authMiddleware, async (req, res) => {
   }
 });
 
-// 🔥 ATUALIZAR
+// 🔥 ATUALIZAR (APENAS UMA VEZ)
 app.put("/clientes/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email } = req.body;
+
+    const {
+      nome,
+      email,
+      telefone,
+      endereco,
+      nomeSocial,
+      documento
+    } = req.body;
 
     const result = await db.query(
-      "UPDATE clientes SET nome = $1, email = $2 WHERE id = $3 RETURNING *",
-      [nome, email, id]
+      `UPDATE clientes SET
+        nome = $1,
+        email = $2,
+        telefone = $3,
+        endereco = $4,
+        nome_social = $5,
+        documento = $6
+      WHERE id = $7
+      RETURNING *`,
+      [nome, email, telefone, endereco, nomeSocial, documento, id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ erro: "Cliente não encontrado" });
     }
+
+    console.log("CLIENTE ATUALIZADO:", result.rows[0]);
 
     res.json(result.rows[0]);
 
